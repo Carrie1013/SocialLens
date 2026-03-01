@@ -44,8 +44,9 @@ export const SocialGraph: React.FC<Props> = ({
     });
     nodePositions.current = positions;
 
-    // Draw group connection lines
-    result.groups.forEach((grp, gi) => {
+    // Draw group connection lines (guard against missing data)
+    const groups = result.groups || [];
+    groups.forEach((grp, gi) => {
       const groupColors = ["#00ff88", "#00aaff", "#ffaa00", "#ff4444"];
       const lineColor = groupColors[gi % groupColors.length];
       const members = grp.member_ids;

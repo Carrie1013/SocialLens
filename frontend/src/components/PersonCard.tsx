@@ -82,7 +82,11 @@ export const PersonCard: React.FC<Props> = ({
         </div>
         <div>
           <div className="text-gray-600">orient</div>
-          <div className="truncate text-[10px]">{person.body_orientation.replace("_", " ").toLowerCase()}</div>
+          <div className="truncate text-[10px]">
+          {person.body_orientation
+            ? person.body_orientation.replace("_", " ").toLowerCase()
+            : "unknown"}
+        </div>
         </div>
         <div>
           <div className="text-gray-600">rank</div>
