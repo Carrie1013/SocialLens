@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Dark cyberpunk base ─────────────────────────────────────────────────── */
+
+:root {
+  --bg-primary:   #0a0a0f;
+  --bg-secondary: #0f0f1a;
+  --border:       #1e1e2e;
+  --neon-green:   #00ff88;
+  --neon-amber:   #ffaa00;
+  --neon-red:     #ff4444;
+  --neon-blue:    #00aaff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: #e2e2ef;
+  font-family: "Inter", system-ui, sans-serif;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3e transparent;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3e;
+  border-radius: 4px;
+}
+
+/* ── Glassmorphism panel ─────────────────────────────────────────────────── */
+
+.glass-panel {
+  background: rgba(15, 15, 26, 0.8);
+  backdrop-filter: blur(12px);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+
+.btn-primary {
+  @apply px-4 py-2 rounded-lg text-sm font-mono font-medium transition-all;
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--neon-green);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: var(--neon-green);
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 rounded-lg text-sm font-mono transition-all;
+  background: rgba(255, 255, 255, 0.04);
+  color: #888;
+  border: 1px solid #2a2a3e;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  border-color: #444;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Glow text ───────────────────────────────────────────────────────────── */
+
+.text-glow-green {
+  text-shadow: 0 0 12px var(--neon-green);
+}
+
+/* ── Scan line animation (decorative) ───────────────────────────────────── */
+
+@keyframes scanline {
+  0%   { top: -4%; }
+  100% { top: 104%; }
+}
+
+.scanline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(transparent, rgba(0, 255, 136, 0.15), transparent);
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Pulse glow ──────────────────────────────────────────────────────────── */
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(0,255,136,0.3); }
+  50%       { box-shadow: 0 0 16px rgba(0,255,136,0.7); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
