@@ -103,7 +103,7 @@ export default function App() {
   const handleLiveFrame = useCallback(
     async (blob: Blob) => {
       const now = Date.now();
-      if (now - lastLiveCall.current < 1800) return; // debounce
+      if (now - lastLiveCall.current < 1000) return; // debounce
       lastLiveCall.current = now;
 
       const ws = getWebSocket(

@@ -587,7 +587,7 @@ def draw_annotations(image_bgr: np.ndarray, persons: list[PersonData]) -> np.nda
     annotated = image_bgr.copy()
     for p in persons:
         x, y, w, h = p.bbox
-        color = score_color(p.social_engagement_score)
+        color = (255, 140, 0) if p.name else score_color(p.social_engagement_score)  # blue for known, score-based for unknown
 
         cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 2)
 
