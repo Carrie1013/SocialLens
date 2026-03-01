@@ -3,6 +3,7 @@ import { AnalysisResult, AppMode } from "./types";
 import { VideoCapture } from "./components/VideoCapture";
 import { AnnotatedCanvas } from "./components/AnnotatedCanvas";
 import { PersonCard } from "./components/PersonCard";
+import { PersonDatabase } from "./components/PersonDatabase";
 import { SocialGraph } from "./components/SocialGraph";
 import { RankingPanel } from "./components/RankingPanel";
 import { AudioPlayer } from "./components/AudioPlayer";
@@ -66,6 +67,7 @@ export default function App() {
   const [voiceProfile, setVoiceProfile] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingMs, setProcessingMs] = useState<number | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   const lastLiveCall = useRef<number>(0);
 
@@ -190,6 +192,19 @@ export default function App() {
               ⚡ {processingMs}ms
             </span>
           )}
+          {/* Voice toggle */}
+          <button
+            onClick={() => setVoiceEnabled((v) => !v)}
+            className={`px-3 py-1 text-xs font-mono rounded-lg border transition-colors ${
+              voiceEnabled
+                ? "border-green-600 bg-green-500/20 text-green-400"
+                : "border-gray-700 text-gray-500 hover:text-gray-300"
+            }`}
+            title={voiceEnabled ? "Voice generation ON" : "Voice generation OFF"}
+          >
+            {voiceEnabled ? "🔊 Voice ON" : "🔇 Voice OFF"}
+          </button>
+
           {/* Mode toggle */}
           <div className="flex rounded-lg border border-gray-700 overflow-hidden">
             {(["snapshot", "live"] as AppMode[]).map((m) => (
@@ -245,6 +260,9 @@ export default function App() {
               onClose={clearAudio}
             />
           )}
+
+          {/* People Database */}
+          <PersonDatabase />
 
           {/* Ranking */}
           {result && result.persons.length > 0 && (
@@ -317,6 +335,7 @@ export default function App() {
               result={result!}
               isSelected={selectedPersonId === p.person_id}
               isGeneratingVoice={isGeneratingVoice && selectedPersonId === p.person_id}
+              voiceEnabled={voiceEnabled}
               onClick={() => handlePersonClick(p.person_id)}
               onVoice={() => handlePersonVoice(p.person_id)}
             />

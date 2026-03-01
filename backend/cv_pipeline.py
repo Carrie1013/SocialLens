@@ -18,6 +18,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -48,6 +49,7 @@ class PersonData:
     social_rank: int = 0
     face_center: tuple[float, float] = field(default_factory=lambda: (0.0, 0.0))
     landmark_data: dict = field(default_factory=dict)
+    name: Optional[str] = None  # Set by face recognition database
 
     def to_dict(self) -> dict:
         out = {
@@ -60,6 +62,8 @@ class PersonData:
             "social_engagement_score": round(self.social_engagement_score, 1),
             "social_rank": self.social_rank,
         }
+        if self.name:
+            out["name"] = self.name
         if self.landmark_data:
             out["landmark_data"] = self.landmark_data
         return out
@@ -587,8 +591,9 @@ def draw_annotations(image_bgr: np.ndarray, persons: list[PersonData]) -> np.nda
 
         cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 2)
 
+        display_id = p.name if p.name else p.person_id
         label = (
-            f"{p.person_id} "
+            f"{display_id} "
             f"{EXPRESSION_EMOJI.get(p.expression, '')} "
             f"score:{p.social_engagement_score:.0f}"
         )

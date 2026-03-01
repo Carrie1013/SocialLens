@@ -20,6 +20,7 @@ from fastapi.responses import Response
 
 from cv_pipeline import CVPipeline, draw_annotations
 from elevenlabs_client import ElevenLabsClient, select_voice_id
+from face_db import FaceDatabase
 from social_metrics import assign_social_scores, social_ranking_ids, compute_pairwise_matrix
 from vlm_analyzer import VLMAnalyzer
 
@@ -56,6 +57,7 @@ app.add_middleware(
 cv_pipeline = CVPipeline()
 vlm_analyzer = VLMAnalyzer(api_key=ANTHROPIC_API_KEY)
 tts_client = ElevenLabsClient(api_key=ELEVENLABS_API_KEY)
+face_db = FaceDatabase()
 
 # In-memory store: image_id → (image_bgr, analysis_result)
 image_store: dict[str, tuple[np.ndarray, dict]] = {}
@@ -232,6 +234,13 @@ async def run_full_pipeline(
 
     # CV pipeline (synchronous, fast)
     persons = cv_pipeline.process(image_bgr)
+
+    # Face recognition: identify known people by name
+    for p in persons:
+        matched_name = face_db.identify(image_bgr, tuple(p.bbox))
+        if matched_name:
+            p.name = matched_name
+
     persons = assign_social_scores(persons, img_w, img_h)
 
     person_dicts = [p.to_dict() for p in persons]
@@ -299,6 +308,51 @@ async def analyze(file: UploadFile = File(...)):
     image_store[result["image_id"]] = (image_bgr, result)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Personal Face Database endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/face-db")
+async def face_db_list():
+    """List all people registered in the face database."""
+    return {"persons": face_db.list_persons()}
+
+
+@app.post("/api/face-db")
+async def face_db_add(name: str, file: UploadFile = File(...)):
+    """Register a person. Send their name and a clear face photo."""
+    raw = await file.read()
+    try:
+        image_bgr = decode_image(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    result_code = face_db.add_person(name.strip(), image_bgr)
+    if result_code == "not_installed":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "face_recognition library is not installed on the server. "
+                "Fix: sudo apt install cmake build-essential && pip install face-recognition"
+            ),
+        )
+    if result_code == "no_face":
+        raise HTTPException(
+            status_code=422,
+            detail="No face detected in the uploaded image. Please use a clear, well-lit front-facing photo.",
+        )
+    return {"status": "registered", "name": name.strip(), "total": len(face_db.list_persons())}
+
+
+@app.delete("/api/face-db/{name}")
+async def face_db_remove(name: str):
+    """Remove a person from the face database."""
+    removed = face_db.remove_person(name)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"'{name}' not found in face database.")
+    return {"status": "removed", "name": name}
 
 
 @app.post("/api/person/{image_id}/{person_id}/voice")

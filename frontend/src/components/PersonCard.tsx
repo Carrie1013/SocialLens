@@ -12,6 +12,7 @@ interface Props {
   result: AnalysisResult;
   isSelected: boolean;
   isGeneratingVoice: boolean;
+  voiceEnabled: boolean;
   onClick: () => void;
   onVoice: () => void;
 }
@@ -21,6 +22,7 @@ export const PersonCard: React.FC<Props> = ({
   result,
   isSelected,
   isGeneratingVoice,
+  voiceEnabled,
   onClick,
   onVoice,
 }) => {
@@ -42,9 +44,17 @@ export const PersonCard: React.FC<Props> = ({
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono font-bold text-sm" style={{ color }}>
-            {person.person_id}
-          </span>
+          <div>
+            {person.name && (
+              <div className="font-mono font-bold text-sm" style={{ color }}>
+                {person.name}
+              </div>
+            )}
+            <span className={`font-mono text-xs ${person.name ? "text-gray-500" : "font-bold text-sm"}`}
+                  style={person.name ? {} : { color }}>
+              {person.person_id}
+            </span>
+          </div>
           {isCenter && <span title="Social center">👑</span>}
           {role && (
             <span className="text-xs bg-gray-800 rounded px-1 py-0.5">
@@ -101,15 +111,17 @@ export const PersonCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Voice button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onVoice(); }}
-        disabled={isGeneratingVoice}
-        className="mt-2 w-full text-xs py-1 rounded border border-gray-700 hover:border-green-500
-                   text-gray-400 hover:text-green-400 transition-colors disabled:opacity-50"
-      >
-        {isGeneratingVoice && isSelected ? "🎙 Generating…" : "🔊 Generate Voice"}
-      </button>
+      {/* Voice button — only shown when voice is enabled globally */}
+      {voiceEnabled && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onVoice(); }}
+          disabled={isGeneratingVoice}
+          className="mt-2 w-full text-xs py-1 rounded border border-gray-700 hover:border-green-500
+                     text-gray-400 hover:text-green-400 transition-colors disabled:opacity-50"
+        >
+          {isGeneratingVoice && isSelected ? "🎙 Generating…" : "🔊 Generate Voice"}
+        </button>
+      )}
     </div>
   );
 };

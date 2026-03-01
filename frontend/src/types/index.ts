@@ -28,6 +28,7 @@ export type GroupType = "conversation" | "presentation" | "casual";
 
 export interface PersonData {
   person_id: string;
+  name?: string;             // Set when face is matched in personal database
   bbox: [number, number, number, number]; // [x, y, w, h]
   estimated_depth: number;
   body_orientation: BodyOrientation;
