@@ -21,6 +21,7 @@ export const VideoCapture: React.FC<Props> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveTickBusyRef = useRef(false);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -57,7 +58,7 @@ export const VideoCapture: React.FC<Props> = ({
     }
   }, []);
 
-  const captureFrame = useCallback((): Blob | null => {
+  const captureFrame = useCallback(async (): Promise<Blob | null> => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
@@ -66,15 +67,15 @@ export const VideoCapture: React.FC<Props> = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0);
-    let blob: Blob | null = null;
-    canvas.toBlob((b) => { blob = b; }, "image/jpeg", 0.85);
-    return blob;
+    return await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85);
+    });
   }, []);
 
   // ── Snapshot ────────────────────────────────────────────────────────────────
 
-  const handleSnapshot = useCallback(() => {
-    const blob = captureFrame();
+  const handleSnapshot = useCallback(async () => {
+    const blob = await captureFrame();
     if (blob) onSnapshot(blob);
   }, [captureFrame, onSnapshot]);
 
@@ -82,18 +83,26 @@ export const VideoCapture: React.FC<Props> = ({
 
   React.useEffect(() => {
     if (liveMode && cameraActive && onLiveFrame) {
-      liveTimerRef.current = setInterval(() => {
-        const blob = captureFrame();
-        if (blob) onLiveFrame(blob);
+      liveTimerRef.current = setInterval(async () => {
+        if (liveTickBusyRef.current) return;
+        liveTickBusyRef.current = true;
+        try {
+          const blob = await captureFrame();
+          if (blob) onLiveFrame(blob);
+        } finally {
+          liveTickBusyRef.current = false;
+        }
       }, LIVE_INTERVAL_MS);
     } else {
       if (liveTimerRef.current) {
         clearInterval(liveTimerRef.current);
         liveTimerRef.current = null;
       }
+      liveTickBusyRef.current = false;
     }
     return () => {
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+      liveTickBusyRef.current = false;
     };
   }, [liveMode, cameraActive, captureFrame, onLiveFrame]);
 

@@ -17,7 +17,9 @@ function getWebSocket(
   onMessage: (data: AnalysisResult) => void,
   onError: (msg: string) => void,
 ): WebSocket {
-  if (wsInstance && wsInstance.readyState === WebSocket.OPEN) return wsInstance;
+  if (wsInstance && (wsInstance.readyState === WebSocket.OPEN || wsInstance.readyState === WebSocket.CONNECTING)) {
+    return wsInstance;
+  }
   const ws = new WebSocket(`${API_BASE.replace(/^http/, "ws")}/api/stream`);
   ws.binaryType = "arraybuffer";
   ws.onmessage = (e) => {
@@ -28,8 +30,27 @@ function getWebSocket(
     } catch {}
   };
   ws.onerror = () => onError("WebSocket error");
+  ws.onclose = () => {
+    if (wsInstance === ws) wsInstance = null;
+  };
   wsInstance = ws;
   return ws;
+}
+
+function waitForOpen(ws: WebSocket, timeoutMs = 1200): Promise<boolean> {
+  if (ws.readyState === WebSocket.OPEN) return Promise.resolve(true);
+  if (ws.readyState !== WebSocket.CONNECTING) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      ws.removeEventListener("open", onOpen);
+      resolve(false);
+    }, timeoutMs);
+    const onOpen = () => {
+      clearTimeout(t);
+      resolve(true);
+    };
+    ws.addEventListener("open", onOpen, { once: true });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +111,8 @@ export default function App() {
         },
         (msg) => setError(msg),
       );
-      if (ws.readyState !== WebSocket.OPEN) return;
+      const ready = await waitForOpen(ws);
+      if (!ready || ws.readyState !== WebSocket.OPEN) return;
       const arr = await blob.arrayBuffer();
       ws.send(arr);
     },
