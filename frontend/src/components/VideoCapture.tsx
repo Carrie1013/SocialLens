@@ -8,7 +8,7 @@ interface Props {
   onLiveFrame?: (blob: Blob) => void;
 }
 
-const LIVE_INTERVAL_MS = 2000;
+const LIVE_INTERVAL_MS = 1000;
 
 export const VideoCapture: React.FC<Props> = ({
   onSnapshot,
