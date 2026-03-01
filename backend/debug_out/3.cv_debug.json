@@ -1,0 +1,77 @@
+{
+  "image": "/Users/qiaochufeng/Downloads/SD/imgs/3.JPG",
+  "counts": {
+    "raw_candidates": 2,
+    "final_candidates": 2
+  },
+  "final_persons": [
+    {
+      "person_id": "P1",
+      "bbox": [
+        4319,
+        1428,
+        552,
+        552
+      ],
+      "source": "face_frontal",
+      "depth": 0.67,
+      "orientation": "UNKNOWN"
+    },
+    {
+      "person_id": "P2",
+      "bbox": [
+        5568,
+        1116,
+        914,
+        914
+      ],
+      "source": "face_profile",
+      "depth": 0.4,
+      "orientation": "UNKNOWN"
+    }
+  ],
+  "raw_candidates": [
+    {
+      "bbox": [
+        789,
+        261,
+        101,
+        101
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        1017,
+        204,
+        167,
+        167
+      ],
+      "score": 0.46,
+      "source": "face_profile"
+    }
+  ],
+  "final_candidates": [
+    {
+      "bbox": [
+        789,
+        261,
+        101,
+        101
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        1017,
+        204,
+        167,
+        167
+      ],
+      "score": 0.46,
+      "source": "face_profile"
+    }
+  ]
+}

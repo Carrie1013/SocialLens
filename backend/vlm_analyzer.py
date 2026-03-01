@@ -27,6 +27,12 @@ ANALYSIS_PROMPT_TEMPLATE = """Analyze this image of people and provide social dy
 
 Person bounding boxes are provided as context: {person_bboxes}
 
+Important calibration rules:
+- Do NOT assume eye contact or attention unless clearly visible.
+- If gaze/body orientation is uncertain, assign role "observer" with lower confidence.
+- Use "social_center": null when there is no clearly dominant social focus.
+- Avoid placing all people in one fully connected group unless clearly interacting.
+
 Return ONLY valid JSON with this structure (no markdown, no explanation):
 {{
   "groups": [
@@ -45,7 +51,7 @@ Return ONLY valid JSON with this structure (no markdown, no explanation):
       "reasoning": "brief explanation"
     }}
   }},
-  "social_center": "P1",
+  "social_center": "P1|null",
   "dynamics_summary": "2-3 sentence description of the overall social scene",
   "interesting_observations": ["observation 1", "observation 2", "observation 3"]
 }}
@@ -216,7 +222,7 @@ def _empty_analysis(person_bboxes: list[dict]) -> dict:
     return {
         "groups": groups,
         "roles": roles,
-        "social_center": ids[0] if ids else None,
+        "social_center": None,
         "dynamics_summary": "Analysis temporarily unavailable.",
         "interesting_observations": [],
     }

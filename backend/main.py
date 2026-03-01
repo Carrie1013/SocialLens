@@ -4,7 +4,6 @@ SocialLens Backend — FastAPI + WebSocket
 
 import asyncio
 import base64
-import io
 import json
 import logging
 import os
@@ -21,7 +20,7 @@ from fastapi.responses import Response
 
 from cv_pipeline import CVPipeline, draw_annotations
 from elevenlabs_client import ElevenLabsClient, select_voice_id
-from social_metrics import assign_social_scores, social_ranking_ids
+from social_metrics import assign_social_scores, social_ranking_ids, compute_pairwise_matrix
 from vlm_analyzer import VLMAnalyzer
 
 # ---------------------------------------------------------------------------
@@ -79,7 +78,154 @@ def encode_image_b64(image_bgr: np.ndarray, fmt: str = ".jpg") -> str:
     return base64.b64encode(buf).decode("utf-8")
 
 
-async def run_full_pipeline(image_bgr: np.ndarray) -> dict:
+def _attention_edges(persons: list, img_w: int, img_h: int) -> dict[str, str]:
+    """Map src person_id -> dst person_id if attention vector points to target."""
+    centers = {p.person_id: (p.face_center[0], p.face_center[1]) for p in persons}
+    diag = max((img_w ** 2 + img_h ** 2) ** 0.5, 1.0)
+    edges: dict[str, str] = {}
+
+    for p in persons:
+        lm = p.landmark_data or {}
+        # Strict mode: social attention uses head/gaze only.
+        # Body focus is visualized separately but not used for role/edge decisions.
+        vec = lm.get("head_gaze_vector")
+        if not vec:
+            continue
+        vx, vy = float(vec[0]), float(vec[1])
+        vnorm = (vx * vx + vy * vy) ** 0.5
+        if vnorm < 1e-6:
+            continue
+        vx /= vnorm
+        vy /= vnorm
+
+        sx, sy = centers[p.person_id]
+        best_target = None
+        best_score = -1.0
+        for q in persons:
+            if q.person_id == p.person_id:
+                continue
+            tx, ty = centers[q.person_id]
+            dx, dy = tx - sx, ty - sy
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist < 1e-6:
+                continue
+            ux, uy = dx / dist, dy / dist
+            dot = vx * ux + vy * uy
+            if dot < 0.62:
+                continue
+            # Prefer closer and better aligned targets.
+            score = dot - 0.18 * (dist / diag)
+            if score > best_score:
+                best_score = score
+                best_target = q.person_id
+        if best_target:
+            edges[p.person_id] = best_target
+    return edges
+
+
+def _roles_groups_center_from_attention(persons: list, img_w: int, img_h: int) -> tuple[dict, list[dict], Optional[str]]:
+    if not persons:
+        return {}, [], None
+
+    edges = _attention_edges(persons, img_w, img_h)
+    ids = [p.person_id for p in persons]
+    in_deg = {pid: 0 for pid in ids}
+    out_deg = {pid: 0 for pid in ids}
+    for src, dst in edges.items():
+        out_deg[src] += 1
+        in_deg[dst] += 1
+
+    # Build conservative graph: attention edges + strong proximity edges.
+    adj: dict[str, set[str]] = {pid: set() for pid in ids}
+    for src, dst in edges.items():
+        adj[src].add(dst)
+        adj[dst].add(src)
+
+    pairwise = compute_pairwise_matrix(persons, img_w, img_h) if len(persons) > 1 else {}
+    for (a, b), score in pairwise.items():
+        if score >= 70:
+            adj[a].add(b)
+            adj[b].add(a)
+
+    roles: dict = {}
+    for p in persons:
+        pid = p.person_id
+        indeg = in_deg[pid]
+        outdeg = out_deg[pid]
+        if indeg >= 2:
+            role = "leader"
+            conf = min(95, 70 + indeg * 8)
+            reason = f"receives attention from {indeg} people"
+        elif outdeg >= 1 and indeg >= 1:
+            role = "connector"
+            conf = 76
+            reason = "both attends to others and is attended by others"
+        elif outdeg >= 1:
+            role = "listener"
+            conf = 72
+            reason = "attention vector points to another person"
+        else:
+            role = "observer"
+            conf = 65
+            reason = "no strong directed attention evidence"
+        roles[pid] = {"role": role, "confidence": conf, "reasoning": reason}
+
+    center = None
+    if len(persons) > 1:
+        ranked = sorted(persons, key=lambda p: (in_deg[p.person_id], p.social_engagement_score), reverse=True)
+        top = ranked[0]
+        if in_deg[top.person_id] >= 2:
+            center = top.person_id
+
+    # Connected components -> groups
+    visited: set[str] = set()
+    groups: list[dict] = []
+    gid = 1
+    for pid in ids:
+        if pid in visited:
+            continue
+        stack = [pid]
+        comp: list[str] = []
+        while stack:
+            cur = stack.pop()
+            if cur in visited:
+                continue
+            visited.add(cur)
+            comp.append(cur)
+            for nxt in adj[cur]:
+                if nxt not in visited:
+                    stack.append(nxt)
+        if len(comp) < 2:
+            continue
+        members = [p for p in persons if p.person_id in set(comp)]
+        x1 = min(p.bbox[0] for p in members)
+        y1 = min(p.bbox[1] for p in members)
+        x2 = max(p.bbox[0] + p.bbox[2] for p in members)
+        y2 = max(p.bbox[1] + p.bbox[3] for p in members)
+        cohesion_edges = 0
+        for m in comp:
+            cohesion_edges += len(adj[m])
+        cohesion = min(95, max(40, int(45 + cohesion_edges * 6)))
+        groups.append(
+            {
+                "group_id": f"G{gid}",
+                "member_ids": sorted(comp, key=lambda x: int(x[1:]) if x[1:].isdigit() else x),
+                "group_type": "conversation" if cohesion >= 70 else "casual",
+                "cohesion_score": cohesion,
+                "bounding_region": {"x": int(x1), "y": int(y1), "w": int(x2 - x1), "h": int(y2 - y1)},
+            }
+        )
+        gid += 1
+
+    return roles, groups, center
+
+
+async def run_full_pipeline(
+    image_bgr: np.ndarray,
+    *,
+    run_vlm: bool = True,
+    sticky_vlm: Optional[dict] = None,
+) -> dict:
     """CV → social metrics → VLM (async). Returns full analysis dict."""
     t0 = time.monotonic()
     img_h, img_w = image_bgr.shape[:2]
@@ -91,10 +237,16 @@ async def run_full_pipeline(image_bgr: np.ndarray) -> dict:
     person_dicts = [p.to_dict() for p in persons]
     person_bboxes = [{"person_id": p.person_id, "bbox": p.bbox} for p in persons]
 
-    # VLM analysis (async)
+    # VLM analysis (async, optional for low-latency live mode)
     vlm_result = {}
-    if persons:
+    if run_vlm and persons:
         vlm_result = await vlm_analyzer.analyze_scene(image_bgr, person_bboxes)
+    elif sticky_vlm:
+        # Reuse first-frame VLM narrative for subsequent live frames.
+        vlm_result = {
+            "dynamics_summary": sticky_vlm.get("dynamics_summary", ""),
+            "interesting_observations": sticky_vlm.get("interesting_observations", []),
+        }
 
     # Annotated image
     annotated = draw_annotations(image_bgr, persons)
@@ -102,12 +254,15 @@ async def run_full_pipeline(image_bgr: np.ndarray) -> dict:
 
     elapsed_ms = round((time.monotonic() - t0) * 1000)
 
+    roles, groups, center_from_attention = _roles_groups_center_from_attention(persons, img_w, img_h)
+    social_center = center_from_attention
+
     return {
         "image_id": str(uuid.uuid4()),
         "persons": person_dicts,
-        "groups": vlm_result.get("groups", []),
-        "roles": vlm_result.get("roles", {}),
-        "social_center": vlm_result.get("social_center"),
+        "groups": groups,
+        "roles": roles,
+        "social_center": social_center,
         "dynamics_summary": vlm_result.get("dynamics_summary", ""),
         "interesting_observations": vlm_result.get("interesting_observations", []),
         "social_ranking": social_ranking_ids(persons),
@@ -201,6 +356,8 @@ async def generate_voice(image_id: str, person_id: str):
 async def websocket_stream(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket client connected")
+    first_frame = True
+    sticky_vlm: dict = {}
     try:
         while True:
             # Expect binary frame (JPEG bytes) from client
@@ -211,7 +368,20 @@ async def websocket_stream(websocket: WebSocket):
                 await websocket.send_json({"error": "Invalid image data"})
                 continue
 
-            result = await run_full_pipeline(image_bgr)
+            # First live frame: full pipeline (with VLM).
+            # Following frames: CV-only for low latency.
+            result = await run_full_pipeline(
+                image_bgr,
+                run_vlm=first_frame,
+                sticky_vlm=sticky_vlm,
+            )
+            if first_frame:
+                sticky_vlm = {
+                    "dynamics_summary": result.get("dynamics_summary", ""),
+                    "interesting_observations": result.get("interesting_observations", []),
+                }
+                first_frame = False
+
             image_id = result["image_id"]
             image_store[image_id] = (image_bgr, result)
 

@@ -1,0 +1,203 @@
+{
+  "image": "/Users/qiaochufeng/Downloads/SD/imgs/1.JPG",
+  "counts": {
+    "raw_candidates": 8,
+    "final_candidates": 5
+  },
+  "final_persons": [
+    {
+      "person_id": "P1",
+      "bbox": [
+        175,
+        1779,
+        1111,
+        1111
+      ],
+      "source": "face_frontal",
+      "depth": 0.33,
+      "orientation": "UNKNOWN"
+    },
+    {
+      "person_id": "P2",
+      "bbox": [
+        2398,
+        667,
+        569,
+        569
+      ],
+      "source": "face_frontal",
+      "depth": 0.65,
+      "orientation": "UNKNOWN"
+    },
+    {
+      "person_id": "P3",
+      "bbox": [
+        3197,
+        1330,
+        607,
+        607
+      ],
+      "source": "face_frontal",
+      "depth": 0.61,
+      "orientation": "UNKNOWN"
+    },
+    {
+      "person_id": "P4",
+      "bbox": [
+        3323,
+        3044,
+        1105,
+        1105
+      ],
+      "source": "face_frontal",
+      "depth": 0.33,
+      "orientation": "UNKNOWN"
+    },
+    {
+      "person_id": "P5",
+      "bbox": [
+        5661,
+        1828,
+        1188,
+        1188
+      ],
+      "source": "face_frontal",
+      "depth": 0.31,
+      "orientation": "UNKNOWN"
+    }
+  ],
+  "raw_candidates": [
+    {
+      "bbox": [
+        438,
+        122,
+        104,
+        104
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        584,
+        243,
+        111,
+        111
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        32,
+        325,
+        203,
+        203
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        1034,
+        334,
+        217,
+        217
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        607,
+        556,
+        202,
+        202
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        452,
+        117,
+        113,
+        113
+      ],
+      "score": 0.46,
+      "source": "face_profile"
+    },
+    {
+      "bbox": [
+        599,
+        230,
+        136,
+        136
+      ],
+      "score": 0.46,
+      "source": "face_profile"
+    },
+    {
+      "bbox": [
+        607,
+        520,
+        264,
+        264
+      ],
+      "score": 0.46,
+      "source": "face_profile"
+    }
+  ],
+  "final_candidates": [
+    {
+      "bbox": [
+        32,
+        325,
+        203,
+        203
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        438,
+        122,
+        104,
+        104
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        584,
+        243,
+        111,
+        111
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        607,
+        556,
+        202,
+        202
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    },
+    {
+      "bbox": [
+        1034,
+        334,
+        217,
+        217
+      ],
+      "score": 0.48,
+      "source": "face_frontal"
+    }
+  ]
+}

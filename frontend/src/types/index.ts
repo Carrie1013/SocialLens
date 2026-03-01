@@ -35,6 +35,13 @@ export interface PersonData {
   face_area_px: number;
   social_engagement_score: number;
   social_rank: number;
+  landmark_data?: {
+    source?: string;
+    conf?: number;
+    body_focus_vector?: [number, number] | null;
+    head_gaze_vector?: [number, number] | null;
+    head_gaze_source?: string;
+  };
 }
 
 export interface PersonRole {

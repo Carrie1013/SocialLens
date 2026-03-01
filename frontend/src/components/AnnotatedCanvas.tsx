@@ -144,6 +144,8 @@ export const AnnotatedCanvas: React.FC<Props> = ({
       const by = py * s;
       const bw = pw * s;
       const bh = ph * s;
+      const cx = bx + bw / 2;
+      const cy = by + bh / 2;
 
       // Selected highlight
       if (p.person_id === selectedPersonId) {
@@ -180,7 +182,62 @@ export const AnnotatedCanvas: React.FC<Props> = ({
         ctx.fillText("👑", bx + bw / 2 - 9, by - 6);
         ctx.restore();
       }
+
+      // Dual-focus visualization:
+      // green = body/pose focus, yellow = head/gaze focus.
+      const bodyVec = p.landmark_data?.body_focus_vector;
+      if (bodyVec && bodyVec.length === 2) {
+        const [vx, vy] = bodyVec;
+        const mag = Math.hypot(vx, vy) || 1;
+        const len = Math.max(18, Math.min(48, Math.min(bw, bh) * 0.28));
+        ctx.save();
+        ctx.strokeStyle = "#00ff88";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + (vx / mag) * len, cy + (vy / mag) * len);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const headVec = p.landmark_data?.head_gaze_vector;
+      if (headVec && headVec.length === 2) {
+        const [vx, vy] = headVec;
+        const mag = Math.hypot(vx, vy) || 1;
+        const len = Math.max(22, Math.min(64, Math.min(bw, bh) * 0.38));
+        ctx.save();
+        ctx.strokeStyle = "#ffd400";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + (vx / mag) * len, cy + (vy / mag) * len);
+        ctx.stroke();
+        ctx.restore();
+      }
     });
+
+    // On-canvas legend for dual-focus arrows.
+    ctx.save();
+    const lx = 12;
+    const ly = drawH - 30;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(lx - 8, ly - 18, 240, 24);
+    ctx.strokeStyle = "#00ff88";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly - 6);
+    ctx.lineTo(lx + 20, ly - 6);
+    ctx.stroke();
+    ctx.fillStyle = "#c8d1dc";
+    ctx.font = "12px monospace";
+    ctx.fillText("body focus", lx + 26, ly - 2);
+    ctx.strokeStyle = "#ffd400";
+    ctx.beginPath();
+    ctx.moveTo(lx + 112, ly - 6);
+    ctx.lineTo(lx + 132, ly - 6);
+    ctx.stroke();
+    ctx.fillText("head/gaze focus", lx + 138, ly - 2);
+    ctx.restore();
   }, [result, imgLoaded, selectedPersonId]);
 
   // ── Click detection ───────────────────────────────────────────────────────
