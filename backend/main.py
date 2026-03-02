@@ -483,12 +483,15 @@ async def generate_voice(image_id: str, person_id: str):
     if audio_bytes is None:
         raise HTTPException(status_code=503, detail="TTS generation failed or ElevenLabs not configured.")
 
+    # HTTP headers must be latin-1; strip any non-latin-1 characters
+    safe_dialogue = dialogue.encode("latin-1", errors="replace").decode("latin-1")
+
     return Response(
         content=audio_bytes,
         media_type="audio/mpeg",
         headers={
             "X-Voice-Profile": json.dumps(profile),
-            "X-Dialogue": dialogue,
+            "X-Dialogue": safe_dialogue,
         },
     )
 

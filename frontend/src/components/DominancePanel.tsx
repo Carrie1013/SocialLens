@@ -96,11 +96,21 @@ export const DominancePanel: React.FC<Props> = ({ result, personA, personB, onCl
         <ScoreBar score={result.engagement_score} color={engagementColor} />
       </div>
 
-      {/* Dynamic tag */}
-      <div className="mb-2">
-        <span className="text-[10px] font-mono text-gray-600 uppercase">Dynamic</span>
-        <div className="text-xs font-mono text-purple-300 mt-0.5 italic">
-          "{result.relationship_dynamic}"
+      {/* Interaction type + dynamic */}
+      <div className="mb-2 flex flex-col gap-0.5">
+        {result.interaction_type && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-gray-600 uppercase">Interaction</span>
+            <span className="text-[10px] font-mono text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">
+              {result.interaction_type}
+            </span>
+          </div>
+        )}
+        <div>
+          <span className="text-[10px] font-mono text-gray-600 uppercase">Dynamic</span>
+          <div className="text-xs font-mono text-purple-300 mt-0.5 italic">
+            "{result.relationship_dynamic}"
+          </div>
         </div>
       </div>
 

@@ -84,6 +84,7 @@ export interface DominanceResult {
   dominance_score_a: number;  // 0-1
   dominance_score_b: number;  // 0-1
   engagement_score: number;   // 0-1
+  interaction_type?: string;
   relationship_dynamic: string;
   reasoning: string;
   body_language_a: string;

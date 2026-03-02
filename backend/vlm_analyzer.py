@@ -57,40 +57,75 @@ Return ONLY valid JSON with this structure (no markdown, no explanation):
 }}
 """
 
-DOMINANCE_PROMPT_TEMPLATE = """You are analyzing perceived social dominance between two specific people in this image.
+DOMINANCE_PROMPT_TEMPLATE = """You are a social dynamics expert analyzing perceived power and dominance between two specific people.
 
-Person A ({id_a}):
-- Engagement score: {score_a}/100, Expression: {expression_a}, Orientation: {orientation_a}, Depth: {depth_a}m
+The image has been annotated: Person A has a RED bounding box labeled "A", Person B has a CYAN bounding box labeled "B".
 
-Person B ({id_b}):
-- Engagement score: {score_b}/100, Expression: {expression_b}, Orientation: {orientation_b}, Depth: {depth_b}m
+== CV SENSOR DATA (use as supporting evidence, not the only source) ==
+Person A ({id_a}{name_a}):
+  - Engagement score: {score_a}/100
+  - Social rank among all people in scene: #{rank_a}
+  - Expression: {expression_a}
+  - Body orientation: {orientation_a}
+  - Estimated depth: {depth_a}m (lower = closer to camera)
+  - Face prominence: {face_area_a}px²
+  - Head/gaze direction: {gaze_a}
+  - Body focus vector: {body_focus_a}
 
-The image has been annotated: Person A has a RED bounding box with label "A", Person B has a CYAN bounding box with label "B".
+Person B ({id_b}{name_b}):
+  - Engagement score: {score_b}/100
+  - Social rank among all people in scene: #{rank_b}
+  - Expression: {expression_b}
+  - Body orientation: {orientation_b}
+  - Estimated depth: {depth_b}m
+  - Face prominence: {face_area_b}px²
+  - Head/gaze direction: {gaze_b}
+  - Body focus vector: {body_focus_b}
 
-Analyze visual dominance cues between these two people only:
-- Body expansion and space occupation (who takes up more physical space)
-- Gaze direction (who looks at whom, who commands attention)
-- Emotional intensity and expressiveness
-- Physical positioning, posture, and orientation toward each other
-- Overall social presence and confidence signals
+== DOMINANCE ANALYSIS FRAMEWORK ==
+Carefully examine the image and apply these principles:
+
+1. ACTOR vs RECIPIENT (most important):
+   - The person RECEIVING service, care, or attention (being massaged, helped, listened to, served) = DOMINANT
+   - The person PERFORMING work or service for the other (massaging, assisting, catering to) = SUBMISSIVE in this interaction
+   - A relaxed, passive person being attended to outranks an active person working on them
+
+2. POSTURE & RELAXATION:
+   - Relaxed, reclined, at-ease posture = higher status (confident, no need to prove anything)
+   - Tense, active, effortful, leaning-in posture = lower status (working, serving, trying)
+
+3. ATTENTION ASYMMETRY:
+   - Who is focused on the other vs looking away freely
+   - If A is concentrating on B while B is relaxed/looking elsewhere = B is dominant
+   - The person who commands the other's full attention and effort is dominant
+
+4. SPACE & POSITIONING:
+   - Who occupies more physical space or is more central
+   - Higher physical position often signals authority
+   - Open body language vs closed/contracted
+
+5. EXPRESSION & CONFIDENCE:
+   - Relaxed, neutral, or self-assured expression = confident/dominant
+   - Concentrated, effortful, or attentive expression directed at the other = serving
 
 Return ONLY valid JSON (no markdown, no explanation):
 {{
-  "dominant_person": "A",
-  "dominance_score_a": 0.72,
-  "dominance_score_b": 0.38,
-  "engagement_score": 0.65,
-  "relationship_dynamic": "one-sided leadership",
-  "reasoning": "2-3 sentences explaining the visual cues that indicate dominance.",
-  "body_language_a": "brief description of Person A body language",
-  "body_language_b": "brief description of Person B body language"
+  "dominant_person": "A or B or equal",
+  "dominance_score_a": 0.0,
+  "dominance_score_b": 0.0,
+  "engagement_score": 0.0,
+  "interaction_type": "e.g. massage/service, conversation, confrontation, collaboration, care-giving, negotiation",
+  "relationship_dynamic": "short phrase describing the dynamic",
+  "reasoning": "3-4 sentences describing exactly what you SEE in the image — specific body positions, actions being performed, who is active vs passive — that determines dominance",
+  "body_language_a": "specific description of Person A posture, action, and expression",
+  "body_language_b": "specific description of Person B posture, action, and expression"
 }}
 
 Rules:
-- dominant_person must be "A", "B", or "equal"
-- dominance_score_a and dominance_score_b are floats 0.0-1.0 (the dominant person's score should be higher)
-- engagement_score is 0.0-1.0 (how engaged they are with each other)
-- relationship_dynamic is a short phrase (e.g. "mutual engagement", "hierarchical", "parallel attention", "one-sided focus")
+- dominant_person: "A", "B", or "equal"
+- dominance_score_a and dominance_score_b are each 0.0-1.0 independently (dominant person's score should be clearly higher)
+- engagement_score: 0.0-1.0, how mutually engaged they are with each other
+- Base reasoning PRIMARILY on what you visually observe in the image; use CV sensor data as secondary confirmation
 """
 
 VOICE_PROFILE_PROMPT = """Analyze this person's appearance and generate a character voice profile.
@@ -265,23 +300,46 @@ class VLMAnalyzer:
                         cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3, cv2.LINE_AA)
 
         b64 = _image_to_b64(annotated)
+
+        def _fmt_vec(v) -> str:
+            if not v or not isinstance(v, (list, tuple)) or len(v) < 2:
+                return "unknown"
+            return f"({v[0]:+.2f}, {v[1]:+.2f})"
+
+        def _name_suffix(p: dict) -> str:
+            n = p.get("name")
+            return f" / known as '{n}'" if n else ""
+
+        def _lm(p: dict, key: str):
+            return (p.get("landmark_data") or {}).get(key)
+
         prompt = DOMINANCE_PROMPT_TEMPLATE.format(
             id_a=person_a.get("person_id", "A"),
-            score_a=person_a.get("social_engagement_score", 50),
+            name_a=_name_suffix(person_a),
+            score_a=round(person_a.get("social_engagement_score", 50)),
+            rank_a=person_a.get("social_rank", "?"),
             expression_a=person_a.get("expression", "UNKNOWN"),
             orientation_a=person_a.get("body_orientation", "UNKNOWN"),
             depth_a=person_a.get("estimated_depth", "?"),
+            face_area_a=person_a.get("face_area_px", "?"),
+            gaze_a=_fmt_vec(_lm(person_a, "head_gaze_vector")),
+            body_focus_a=_fmt_vec(_lm(person_a, "body_focus_vector")),
             id_b=person_b.get("person_id", "B"),
-            score_b=person_b.get("social_engagement_score", 50),
+            name_b=_name_suffix(person_b),
+            score_b=round(person_b.get("social_engagement_score", 50)),
+            rank_b=person_b.get("social_rank", "?"),
             expression_b=person_b.get("expression", "UNKNOWN"),
             orientation_b=person_b.get("body_orientation", "UNKNOWN"),
             depth_b=person_b.get("estimated_depth", "?"),
+            face_area_b=person_b.get("face_area_px", "?"),
+            gaze_b=_fmt_vec(_lm(person_b, "head_gaze_vector")),
+            body_focus_b=_fmt_vec(_lm(person_b, "body_focus_vector")),
         )
 
         try:
             response = await self.client.messages.create(
                 model=CLAUDE_MODEL,
-                max_tokens=512,
+                max_tokens=1024,
                 messages=[{
                     "role": "user",
                     "content": [
