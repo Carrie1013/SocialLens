@@ -167,7 +167,7 @@ def _is_reasonable_person_bbox(
     if area < img_w * img_h * 0.0008:
         return False
     aspect = w / max(h, 1)
-    if aspect < 0.15 or aspect > 1.35:
+    if aspect < 0.15 or aspect > 1.9:  # relaxed upper bound for leaning/sitting poses
         return False
     return True
 

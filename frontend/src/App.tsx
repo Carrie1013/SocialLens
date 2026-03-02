@@ -74,8 +74,12 @@ export default function App() {
   const [pairB, setPairB] = useState<string | null>(null);
   const [dominanceResult, setDominanceResult] = useState<DominanceResult | null>(null);
   const [isAnalyzingDominance, setIsAnalyzingDominance] = useState(false);
+  const [faceDbPersons, setFaceDbPersons] = useState<string[]>([]);
+  const [liveTargetA, setLiveTargetA] = useState<string | null>(null);
+  const [liveTargetB, setLiveTargetB] = useState<string | null>(null);
 
   const lastLiveCall = useRef<number>(0);
+  const lastDominanceMsRef = useRef<number>(0);
 
   // ── Analyze image via REST ─────────────────────────────────────────────────
 
@@ -189,15 +193,18 @@ export default function App() {
     setPairA(null);
     setPairB(null);
     setDominanceResult(null);
+    setLiveTargetA(null);
+    setLiveTargetB(null);
   };
 
-  const analyzeDominance = async () => {
-    if (!result || !pairA || !pairB) return;
+  // Core dominance fetch — accepts explicit IDs so it can be called from both
+  // manual button click (snapshot, uses LLM) and auto-trigger (live, CV-only).
+  const analyzeDominanceForPair = useCallback(async (imageId: string, idA: string, idB: string, useLlm = true) => {
     setIsAnalyzingDominance(true);
     setError(null);
     try {
       const res = await fetch(
-        `${API_BASE}/api/dominance/${result.image_id}/${pairA}/${pairB}`,
+        `${API_BASE}/api/dominance/${imageId}/${idA}/${idB}?use_llm=${useLlm}`,
         { method: "POST" },
       );
       if (!res.ok) {
@@ -205,13 +212,49 @@ export default function App() {
         throw new Error(data.detail ?? `HTTP ${res.status}`);
       }
       const data = await res.json();
-      setDominanceResult({ ...data, person_id_a: pairA, person_id_b: pairB });
+      setDominanceResult({ ...data, person_id_a: idA, person_id_b: idB });
     } catch (err: any) {
       setError(err.message || "Dominance analysis failed");
     } finally {
       setIsAnalyzingDominance(false);
     }
+  }, []);
+
+  // Snapshot mode: triggered by button
+  const analyzeDominance = async () => {
+    if (!result || !pairA || !pairB) return;
+    await analyzeDominanceForPair(result.image_id, pairA, pairB);
   };
+
+  // ── Face DB list (for live pair pre-selection) ────────────────────────────
+
+  React.useEffect(() => {
+    if (!pairMode) return;
+    fetch(`${API_BASE}/api/face-db`)
+      .then((r) => r.json())
+      .then((d) => setFaceDbPersons(d.persons ?? []))
+      .catch(() => {});
+  }, [pairMode]);
+
+  // Reset debounce when live targets change so first detection triggers immediately
+  React.useEffect(() => {
+    lastDominanceMsRef.current = 0;
+  }, [liveTargetA, liveTargetB]);
+
+  // ── Auto-trigger dominance in live mode when both targets are detected ─────
+
+  React.useEffect(() => {
+    if (mode !== "live" || !pairMode || !liveTargetA || !liveTargetB || !result || isAnalyzingDominance) return;
+    const personA = result.persons.find((p) => p.name === liveTargetA);
+    const personB = result.persons.find((p) => p.name === liveTargetB);
+    if (!personA || !personB) return;
+    const now = Date.now();
+    if (now - lastDominanceMsRef.current < 2000) return; // 2s debounce (CV-only is fast)
+    lastDominanceMsRef.current = now;
+    setPairA(personA.person_id);
+    setPairB(personB.person_id);
+    analyzeDominanceForPair(result.image_id, personA.person_id, personB.person_id, false); // no LLM in live mode
+  }, [result, mode, pairMode, liveTargetA, liveTargetB, isAnalyzingDominance, analyzeDominanceForPair]);
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -336,18 +379,20 @@ export default function App() {
         </aside>
 
         {/* Center column: Annotated canvas */}
-        <main className="flex-1 flex flex-col gap-3 min-w-0">
+        <main className="flex-1 flex flex-col gap-3 min-w-0 min-h-0">
           {isAnalyzing && (
             <div className="text-center text-green-400 font-mono text-sm py-2 animate-pulse">
               ◈ Analyzing social dynamics…
             </div>
           )}
-          <AnnotatedCanvas
-            result={result}
-            onPersonClick={handlePersonClick}
-            selectedPersonId={selectedPersonId}
-            isGeneratingVoice={isGeneratingVoice}
-          />
+          <div className="flex-1 min-h-0">
+            <AnnotatedCanvas
+              result={result}
+              onPersonClick={handlePersonClick}
+              selectedPersonId={selectedPersonId}
+              isGeneratingVoice={isGeneratingVoice}
+            />
+          </div>
 
           {/* Dynamics summary */}
           {result?.dynamics_summary && (
@@ -389,23 +434,91 @@ export default function App() {
             ) : null;
           })()}
 
-          {/* Pair mode: selection prompt + analyze button */}
+          {/* Pair mode panel */}
           {pairMode && !dominanceResult && (
             <div className="glass-panel rounded-xl p-4 border border-purple-800/60 bg-purple-950/20">
-              <div className="text-xs font-mono text-purple-400 uppercase mb-2">⚡ Pair Analysis</div>
-              <div className="text-xs text-gray-400 font-mono mb-3">
-                {!pairA && !pairB && "Click a person card to select Person A"}
-                {pairA && !pairB && "Now click another person to select Person B"}
-                {pairA && pairB && "Ready to analyze dominance"}
-              </div>
-              <button
-                onClick={analyzeDominance}
-                disabled={!pairA || !pairB || isAnalyzingDominance}
-                className="w-full text-xs py-1.5 rounded border border-purple-700 hover:border-purple-400
-                           text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-40"
-              >
-                {isAnalyzingDominance ? "⚡ Analyzing…" : "⚡ Analyze Dominance"}
-              </button>
+              <div className="text-xs font-mono text-purple-400 uppercase mb-3">⚡ Pair Analysis</div>
+
+              {mode === "live" ? (
+                /* ── Live mode: pre-select from face DB ── */
+                <>
+                  <div className="text-xs text-gray-500 font-mono mb-3">
+                    Select two people from your face database. Dominance will auto-analyze when both are detected.
+                  </div>
+                  {faceDbPersons.length === 0 ? (
+                    <div className="text-xs text-gray-600 font-mono">No people in face database yet.</div>
+                  ) : (
+                    <>
+                      {[
+                        { label: "A", target: liveTargetA, setTarget: setLiveTargetA, color: "#ff4444" },
+                        { label: "B", target: liveTargetB, setTarget: setLiveTargetB, color: "#00ffff" },
+                      ].map(({ label, target, setTarget, color }) => {
+                        const detected = target ? result?.persons.find((p) => p.name === target) : null;
+                        return (
+                          <div key={label} className="mb-3">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-xs font-mono font-bold px-1 rounded border"
+                                    style={{ color, borderColor: color }}>
+                                {label}
+                              </span>
+                              {target && (
+                                <span className={`text-[10px] font-mono ${detected ? "text-green-400" : "text-gray-600"}`}>
+                                  {detected ? "● detected" : "○ not in frame"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {faceDbPersons.map((name) => (
+                                <button
+                                  key={name}
+                                  onClick={() => setTarget(target === name ? null : name)}
+                                  disabled={
+                                    (label === "A" && liveTargetB === name) ||
+                                    (label === "B" && liveTargetA === name)
+                                  }
+                                  className="text-xs px-2 py-0.5 rounded border transition-colors disabled:opacity-30"
+                                  style={
+                                    target === name
+                                      ? { borderColor: color, color, backgroundColor: `${color}22` }
+                                      : { borderColor: "#374151", color: "#9ca3af" }
+                                  }
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {isAnalyzingDominance && (
+                        <div className="text-xs text-purple-400 font-mono animate-pulse">⚡ Analyzing…</div>
+                      )}
+                      {liveTargetA && liveTargetB && !isAnalyzingDominance && (
+                        <div className="text-[10px] text-gray-600 font-mono mt-1">
+                          CV-only · updates every 2s when both detected
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                /* ── Snapshot mode: click person cards ── */
+                <>
+                  <div className="text-xs text-gray-400 font-mono mb-3">
+                    {!pairA && !pairB && "Click a person card to select Person A"}
+                    {pairA && !pairB && "Now click another person to select Person B"}
+                    {pairA && pairB && "Ready to analyze dominance"}
+                  </div>
+                  <button
+                    onClick={analyzeDominance}
+                    disabled={!pairA || !pairB || isAnalyzingDominance}
+                    className="w-full text-xs py-1.5 rounded border border-purple-700 hover:border-purple-400
+                               text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-40"
+                  >
+                    {isAnalyzingDominance ? "⚡ Analyzing…" : "⚡ Analyze Dominance"}
+                  </button>
+                </>
+              )}
             </div>
           )}
 

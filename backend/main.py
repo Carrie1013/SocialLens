@@ -14,7 +14,7 @@ from typing import Optional
 import cv2
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -355,9 +355,75 @@ async def face_db_remove(name: str):
     return {"status": "removed", "name": name}
 
 
+def _cv_dominance(person_a: dict, person_b: dict) -> dict:
+    """
+    Compute dominance from CV data only — no LLM, runs in <1ms.
+    Uses engagement score, face area, depth, orientation, and expression.
+    """
+    def _orient_score(o: str) -> float:
+        return {"FACING_CAMERA": 1.0, "ANGLED": 0.7, "PROFILE_LEFT": 0.5,
+                "PROFILE_RIGHT": 0.5, "TURNED_AWAY": 0.2}.get(o, 0.5)
+
+    def _expr_score(e: str) -> float:
+        return {"LAUGHING": 0.9, "TALKING": 0.85, "SMILING": 0.8, "SURPRISED": 0.7,
+                "FOCUSED": 0.7, "NEUTRAL": 0.5}.get(e, 0.5)
+
+    eng_a = person_a.get("social_engagement_score", 50) / 100
+    eng_b = person_b.get("social_engagement_score", 50) / 100
+
+    fa = person_a.get("face_area_px", 0)
+    fb = person_b.get("face_area_px", 0)
+    total_face = fa + fb or 1
+    face_a, face_b = fa / total_face, fb / total_face
+
+    da = max(0.1, person_a.get("estimated_depth", 2.0))
+    db = max(0.1, person_b.get("estimated_depth", 2.0))
+    depth_a = db / (da + db)   # closer person gets higher score
+    depth_b = da / (da + db)
+
+    orient_a = _orient_score(person_a.get("body_orientation", "UNKNOWN"))
+    orient_b = _orient_score(person_b.get("body_orientation", "UNKNOWN"))
+
+    expr_a = _expr_score(person_a.get("expression", "UNKNOWN"))
+    expr_b = _expr_score(person_b.get("expression", "UNKNOWN"))
+
+    dom_a = 0.30 * eng_a + 0.25 * face_a + 0.20 * depth_a + 0.15 * orient_a + 0.10 * expr_a
+    dom_b = 0.30 * eng_b + 0.25 * face_b + 0.20 * depth_b + 0.15 * orient_b + 0.10 * expr_b
+
+    mx = max(dom_a, dom_b, 0.01)
+    dom_a, dom_b = dom_a / mx, dom_b / mx
+
+    dominant = "A" if dom_a > dom_b + 0.08 else "B" if dom_b > dom_a + 0.08 else "equal"
+
+    def _bl(p: dict) -> str:
+        o = p.get("body_orientation", "UNKNOWN").replace("_", " ").lower()
+        e = p.get("expression", "UNKNOWN").lower()
+        return f"{o}, {e}"
+
+    return {
+        "dominant_person": dominant,
+        "dominance_score_a": round(dom_a, 2),
+        "dominance_score_b": round(dom_b, 2),
+        "engagement_score": round((eng_a + eng_b) / 2, 2),
+        "relationship_dynamic": "real-time CV estimate",
+        "reasoning": "Computed from engagement score, face size, depth, body orientation, and expression — no LLM used.",
+        "body_language_a": _bl(person_a),
+        "body_language_b": _bl(person_b),
+    }
+
+
 @app.post("/api/dominance/{image_id}/{person_id_a}/{person_id_b}")
-async def analyze_dominance(image_id: str, person_id_a: str, person_id_b: str):
-    """Analyze perceived dominance between two specific people in a cached image."""
+async def analyze_dominance(
+    image_id: str,
+    person_id_a: str,
+    person_id_b: str,
+    use_llm: bool = Query(default=True),
+):
+    """
+    Analyze dominance between two people.
+    use_llm=false → instant CV-only result (for live mode).
+    use_llm=true  → full Claude VLM analysis (for snapshot mode).
+    """
     if image_id not in image_store:
         raise HTTPException(status_code=404, detail="Image not found. Re-analyze first.")
 
@@ -372,6 +438,9 @@ async def analyze_dominance(image_id: str, person_id_a: str, person_id_b: str):
         raise HTTPException(status_code=404, detail=f"Person {person_id_b} not found.")
     if person_id_a == person_id_b:
         raise HTTPException(status_code=400, detail="Must select two different people.")
+
+    if not use_llm:
+        return _cv_dominance(person_a, person_b)
 
     result = await vlm_analyzer.analyze_dominance(image_bgr, person_a, person_b)
     return result

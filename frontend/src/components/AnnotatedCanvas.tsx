@@ -29,6 +29,7 @@ const GROUP_BORDER_COLORS = [
 ];
 
 const CANVAS_MAX_W = 960;
+const CANVAS_MAX_H = 700; // fallback when container height is unknown
 
 export const AnnotatedCanvas: React.FC<Props> = ({
   result,
@@ -66,7 +67,10 @@ export const AnnotatedCanvas: React.FC<Props> = ({
     if (!canvas || !img || !imgLoaded || !result || !container) return;
 
     const containerW = container.clientWidth || CANVAS_MAX_W;
-    const scaleX = Math.min(containerW, CANVAS_MAX_W) / img.naturalWidth;
+    const containerH = container.clientHeight || CANVAS_MAX_H;
+    const scaleByW = Math.min(containerW, CANVAS_MAX_W) / img.naturalWidth;
+    const scaleByH = (containerH > 50 ? containerH : CANVAS_MAX_H) / img.naturalHeight;
+    const scaleX = Math.min(scaleByW, scaleByH);
     const drawW = img.naturalWidth * scaleX;
     const drawH = img.naturalHeight * scaleX;
     setScale(scaleX);
@@ -264,7 +268,7 @@ export const AnnotatedCanvas: React.FC<Props> = ({
   return (
     <div
       ref={containerRef}
-      className="relative bg-black rounded-lg overflow-hidden border border-gray-700 min-h-[200px] flex items-center justify-center"
+      className="relative bg-black rounded-lg overflow-hidden border border-gray-700 h-full min-h-[200px] flex items-center justify-center"
     >
       {!result && (
         <div className="text-center text-gray-500 font-mono py-16">
