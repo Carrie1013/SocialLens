@@ -355,6 +355,28 @@ async def face_db_remove(name: str):
     return {"status": "removed", "name": name}
 
 
+@app.post("/api/dominance/{image_id}/{person_id_a}/{person_id_b}")
+async def analyze_dominance(image_id: str, person_id_a: str, person_id_b: str):
+    """Analyze perceived dominance between two specific people in a cached image."""
+    if image_id not in image_store:
+        raise HTTPException(status_code=404, detail="Image not found. Re-analyze first.")
+
+    image_bgr, analysis = image_store[image_id]
+
+    person_a = next((p for p in analysis["persons"] if p["person_id"] == person_id_a), None)
+    person_b = next((p for p in analysis["persons"] if p["person_id"] == person_id_b), None)
+
+    if person_a is None:
+        raise HTTPException(status_code=404, detail=f"Person {person_id_a} not found.")
+    if person_b is None:
+        raise HTTPException(status_code=404, detail=f"Person {person_id_b} not found.")
+    if person_id_a == person_id_b:
+        raise HTTPException(status_code=400, detail="Must select two different people.")
+
+    result = await vlm_analyzer.analyze_dominance(image_bgr, person_a, person_b)
+    return result
+
+
 @app.post("/api/person/{image_id}/{person_id}/voice")
 async def generate_voice(image_id: str, person_id: str):
     """Generate TTS audio for a clicked person."""

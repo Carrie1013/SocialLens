@@ -13,6 +13,7 @@ interface Props {
   isSelected: boolean;
   isGeneratingVoice: boolean;
   voiceEnabled: boolean;
+  pairRole?: "A" | "B";
   onClick: () => void;
   onVoice: () => void;
 }
@@ -23,12 +24,14 @@ export const PersonCard: React.FC<Props> = ({
   isSelected,
   isGeneratingVoice,
   voiceEnabled,
+  pairRole,
   onClick,
   onVoice,
 }) => {
   const role = result.roles?.[person.person_id];
   const isCenter = result.social_center === person.person_id;
   const color = SCORE_COLOR(person.social_engagement_score);
+  const pairColor = pairRole === "A" ? "#ff4444" : "#00ffff";
 
   return (
     <div
@@ -39,11 +42,19 @@ export const PersonCard: React.FC<Props> = ({
           ? "border-white bg-white/10 shadow-lg shadow-white/10"
           : "border-gray-700 bg-gray-900/60 hover:border-gray-500"}
       `}
-      style={isSelected ? { borderColor: color } : {}}
+      style={pairRole ? { borderColor: pairColor, boxShadow: `0 0 8px ${pairColor}44` } : isSelected ? { borderColor: color } : {}}
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
+          {pairRole && (
+            <span
+              className="text-xs font-mono font-bold px-1.5 py-0.5 rounded border shrink-0"
+              style={{ color: pairColor, borderColor: pairColor }}
+            >
+              {pairRole}
+            </span>
+          )}
           <div>
             {person.name && (
               <div className="font-mono font-bold text-sm" style={{ color }}>

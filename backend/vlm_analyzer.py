@@ -57,6 +57,42 @@ Return ONLY valid JSON with this structure (no markdown, no explanation):
 }}
 """
 
+DOMINANCE_PROMPT_TEMPLATE = """You are analyzing perceived social dominance between two specific people in this image.
+
+Person A ({id_a}):
+- Engagement score: {score_a}/100, Expression: {expression_a}, Orientation: {orientation_a}, Depth: {depth_a}m
+
+Person B ({id_b}):
+- Engagement score: {score_b}/100, Expression: {expression_b}, Orientation: {orientation_b}, Depth: {depth_b}m
+
+The image has been annotated: Person A has a RED bounding box with label "A", Person B has a CYAN bounding box with label "B".
+
+Analyze visual dominance cues between these two people only:
+- Body expansion and space occupation (who takes up more physical space)
+- Gaze direction (who looks at whom, who commands attention)
+- Emotional intensity and expressiveness
+- Physical positioning, posture, and orientation toward each other
+- Overall social presence and confidence signals
+
+Return ONLY valid JSON (no markdown, no explanation):
+{{
+  "dominant_person": "A",
+  "dominance_score_a": 0.72,
+  "dominance_score_b": 0.38,
+  "engagement_score": 0.65,
+  "relationship_dynamic": "one-sided leadership",
+  "reasoning": "2-3 sentences explaining the visual cues that indicate dominance.",
+  "body_language_a": "brief description of Person A body language",
+  "body_language_b": "brief description of Person B body language"
+}}
+
+Rules:
+- dominant_person must be "A", "B", or "equal"
+- dominance_score_a and dominance_score_b are floats 0.0-1.0 (the dominant person's score should be higher)
+- engagement_score is 0.0-1.0 (how engaged they are with each other)
+- relationship_dynamic is a short phrase (e.g. "mutual engagement", "hierarchical", "parallel attention", "one-sided focus")
+"""
+
 VOICE_PROFILE_PROMPT = """Analyze this person's appearance and generate a character voice profile.
 Return ONLY valid JSON (no markdown, no explanation):
 {
@@ -208,9 +244,84 @@ class VLMAnalyzer:
             }
 
 
+    async def analyze_dominance(
+        self,
+        image_bgr: np.ndarray,
+        person_a: dict,
+        person_b: dict,
+    ) -> dict:
+        """
+        Analyze perceived dominance between two specific people.
+        Draws colored A/B bounding boxes on image before sending to Claude.
+        """
+        annotated = image_bgr.copy()
+        for person, color, label in [
+            (person_a, (0, 0, 220), "A"),    # red for A
+            (person_b, (220, 220, 0), "B"),  # cyan for B
+        ]:
+            x, y, w, h = person["bbox"]
+            cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 3)
+            cv2.putText(annotated, label, (x + 6, y + 34),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3, cv2.LINE_AA)
+
+        b64 = _image_to_b64(annotated)
+        prompt = DOMINANCE_PROMPT_TEMPLATE.format(
+            id_a=person_a.get("person_id", "A"),
+            score_a=person_a.get("social_engagement_score", 50),
+            expression_a=person_a.get("expression", "UNKNOWN"),
+            orientation_a=person_a.get("body_orientation", "UNKNOWN"),
+            depth_a=person_a.get("estimated_depth", "?"),
+            id_b=person_b.get("person_id", "B"),
+            score_b=person_b.get("social_engagement_score", 50),
+            expression_b=person_b.get("expression", "UNKNOWN"),
+            orientation_b=person_b.get("body_orientation", "UNKNOWN"),
+            depth_b=person_b.get("estimated_depth", "?"),
+        )
+
+        try:
+            response = await self.client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=512,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": b64,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }],
+            )
+            return _parse_json_response(response.content[0].text)
+        except json.JSONDecodeError as e:
+            logger.error("Dominance parse error: %s", e)
+            return _empty_dominance()
+        except Exception as e:
+            logger.error("Dominance VLM error: %s", e)
+            return _empty_dominance()
+
+
 # ---------------------------------------------------------------------------
 # Fallback when API fails
 # ---------------------------------------------------------------------------
+
+def _empty_dominance() -> dict:
+    return {
+        "dominant_person": "equal",
+        "dominance_score_a": 0.5,
+        "dominance_score_b": 0.5,
+        "engagement_score": 0.5,
+        "relationship_dynamic": "analysis unavailable",
+        "reasoning": "Could not analyze dominance dynamics at this time.",
+        "body_language_a": "unknown",
+        "body_language_b": "unknown",
+    }
+
 
 def _empty_analysis(person_bboxes: list[dict]) -> dict:
     ids = [b.get("person_id", f"P{i+1}") for i, b in enumerate(person_bboxes)]

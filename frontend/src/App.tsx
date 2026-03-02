@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
-import { AnalysisResult, AppMode } from "./types";
+import { AnalysisResult, AppMode, DominanceResult } from "./types";
 import { VideoCapture } from "./components/VideoCapture";
 import { AnnotatedCanvas } from "./components/AnnotatedCanvas";
 import { PersonCard } from "./components/PersonCard";
@@ -7,6 +7,7 @@ import { PersonDatabase } from "./components/PersonDatabase";
 import { SocialGraph } from "./components/SocialGraph";
 import { RankingPanel } from "./components/RankingPanel";
 import { AudioPlayer } from "./components/AudioPlayer";
+import { DominancePanel } from "./components/DominancePanel";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
 
@@ -68,6 +69,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [processingMs, setProcessingMs] = useState<number | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [pairMode, setPairMode] = useState(false);
+  const [pairA, setPairA] = useState<string | null>(null);
+  const [pairB, setPairB] = useState<string | null>(null);
+  const [dominanceResult, setDominanceResult] = useState<DominanceResult | null>(null);
+  const [isAnalyzingDominance, setIsAnalyzingDominance] = useState(false);
 
   const lastLiveCall = useRef<number>(0);
 
@@ -154,7 +160,16 @@ export default function App() {
   );
 
   const handlePersonClick = (id: string) => {
-    setSelectedPersonId(id);
+    if (pairMode) {
+      if (pairA === id) { setPairA(null); return; }
+      if (pairB === id) { setPairB(null); return; }
+      if (!pairA) { setPairA(id); return; }
+      if (!pairB) { setPairB(id); return; }
+      // both slots full — replace B, shift old B out
+      setPairA(pairB); setPairB(id);
+    } else {
+      setSelectedPersonId(id);
+    }
   };
 
   const handlePersonVoice = (id: string) => {
@@ -167,6 +182,35 @@ export default function App() {
     setAudioUrl(null);
     setDialogue(null);
     setVoiceProfile(null);
+  };
+
+  const exitPairMode = () => {
+    setPairMode(false);
+    setPairA(null);
+    setPairB(null);
+    setDominanceResult(null);
+  };
+
+  const analyzeDominance = async () => {
+    if (!result || !pairA || !pairB) return;
+    setIsAnalyzingDominance(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/dominance/${result.image_id}/${pairA}/${pairB}`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setDominanceResult({ ...data, person_id_a: pairA, person_id_b: pairB });
+    } catch (err: any) {
+      setError(err.message || "Dominance analysis failed");
+    } finally {
+      setIsAnalyzingDominance(false);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -192,6 +236,21 @@ export default function App() {
               ⚡ {processingMs}ms
             </span>
           )}
+          {/* Pair analysis toggle */}
+          {result && result.persons.length >= 2 && (
+            <button
+              onClick={() => pairMode ? exitPairMode() : setPairMode(true)}
+              className={`px-3 py-1 text-xs font-mono rounded-lg border transition-colors ${
+                pairMode
+                  ? "border-purple-600 bg-purple-500/20 text-purple-400"
+                  : "border-gray-700 text-gray-500 hover:text-gray-300"
+              }`}
+              title="Analyze dominance between two people"
+            >
+              {pairMode ? "⚡ Pair ON" : "⚡ Pair"}
+            </button>
+          )}
+
           {/* Voice toggle */}
           <button
             onClick={() => setVoiceEnabled((v) => !v)}
@@ -316,6 +375,40 @@ export default function App() {
 
         {/* Right column: Person cards + graph */}
         <aside className="w-72 shrink-0 flex flex-col gap-4 overflow-y-auto">
+          {/* Dominance panel */}
+          {dominanceResult && (() => {
+            const personA = result!.persons.find(p => p.person_id === dominanceResult.person_id_a);
+            const personB = result!.persons.find(p => p.person_id === dominanceResult.person_id_b);
+            return personA && personB ? (
+              <DominancePanel
+                result={dominanceResult}
+                personA={personA}
+                personB={personB}
+                onClose={exitPairMode}
+              />
+            ) : null;
+          })()}
+
+          {/* Pair mode: selection prompt + analyze button */}
+          {pairMode && !dominanceResult && (
+            <div className="glass-panel rounded-xl p-4 border border-purple-800/60 bg-purple-950/20">
+              <div className="text-xs font-mono text-purple-400 uppercase mb-2">⚡ Pair Analysis</div>
+              <div className="text-xs text-gray-400 font-mono mb-3">
+                {!pairA && !pairB && "Click a person card to select Person A"}
+                {pairA && !pairB && "Now click another person to select Person B"}
+                {pairA && pairB && "Ready to analyze dominance"}
+              </div>
+              <button
+                onClick={analyzeDominance}
+                disabled={!pairA || !pairB || isAnalyzingDominance}
+                className="w-full text-xs py-1.5 rounded border border-purple-700 hover:border-purple-400
+                           text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-40"
+              >
+                {isAnalyzingDominance ? "⚡ Analyzing…" : "⚡ Analyze Dominance"}
+              </button>
+            </div>
+          )}
+
           {/* Social graph */}
           {result && result.persons.length > 1 && (
             <div className="glass-panel rounded-xl p-4 border border-gray-800">
@@ -333,9 +426,10 @@ export default function App() {
               key={p.person_id}
               person={p}
               result={result!}
-              isSelected={selectedPersonId === p.person_id}
+              isSelected={!pairMode && selectedPersonId === p.person_id}
               isGeneratingVoice={isGeneratingVoice && selectedPersonId === p.person_id}
-              voiceEnabled={voiceEnabled}
+              voiceEnabled={voiceEnabled && !pairMode}
+              pairRole={pairA === p.person_id ? "A" : pairB === p.person_id ? "B" : undefined}
               onClick={() => handlePersonClick(p.person_id)}
               onVoice={() => handlePersonVoice(p.person_id)}
             />
