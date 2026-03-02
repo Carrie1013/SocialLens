@@ -1,0 +1,28 @@
+services:
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - face_db:/app/face_db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Must be reachable from the user's browser — not the Docker network name.
+        # Change this if deploying to a remote server (e.g. http://myserver.com:8080)
+        VITE_API_BASE: http://localhost:8080
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  face_db:
