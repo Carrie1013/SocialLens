@@ -13,6 +13,7 @@ interface Props {
   isSelected: boolean;
   isGeneratingVoice: boolean;
   voiceEnabled: boolean;
+  hasCachedVoice?: boolean;
   pairRole?: "A" | "B";
   onClick: () => void;
   onVoice: () => void;
@@ -24,6 +25,7 @@ export const PersonCard: React.FC<Props> = ({
   isSelected,
   isGeneratingVoice,
   voiceEnabled,
+  hasCachedVoice,
   pairRole,
   onClick,
   onVoice,
@@ -127,10 +129,13 @@ export const PersonCard: React.FC<Props> = ({
         <button
           onClick={(e) => { e.stopPropagation(); onVoice(); }}
           disabled={isGeneratingVoice}
-          className="mt-2 w-full text-xs py-1 rounded border border-gray-700 hover:border-green-500
-                     text-gray-400 hover:text-green-400 transition-colors disabled:opacity-50"
+          className={`mt-2 w-full text-xs py-1 rounded border transition-colors disabled:opacity-50 ${
+            hasCachedVoice
+              ? "border-green-700 bg-green-500/10 text-green-400 hover:border-green-400"
+              : "border-gray-700 text-gray-400 hover:border-green-500 hover:text-green-400"
+          }`}
         >
-          {isGeneratingVoice && isSelected ? "🎙 Generating…" : "🔊 Generate Voice"}
+          {isGeneratingVoice && isSelected ? "🎙 Generating…" : hasCachedVoice ? "▶ Play Voice" : "🔊 Generate Voice"}
         </button>
       )}
     </div>

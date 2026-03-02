@@ -63,9 +63,8 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [dialogue, setDialogue] = useState<string | null>(null);
-  const [voiceProfile, setVoiceProfile] = useState<Record<string, string> | null>(null);
+  const [voiceCache, setVoiceCache] = useState<Record<string, { url: string; dialogue: string | null; profile: Record<string, string> | null }>>({});
+  const [activeVoiceId, setActiveVoiceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingMs, setProcessingMs] = useState<number | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -100,6 +99,8 @@ export default function App() {
       const data: AnalysisResult = await res.json();
       setResult(data);
       setSelectedPersonId(null);
+      setActiveVoiceId(null);
+      setVoiceCache((prev) => { Object.values(prev).forEach((v) => URL.revokeObjectURL(v.url)); return {}; });
       setProcessingMs(data.processing_time_ms);
     } catch (err: any) {
       setError(err.message || "Analysis failed");
@@ -151,9 +152,19 @@ export default function App() {
         const dialogueHeader = res.headers.get("X-Dialogue");
         const audioBlob = await res.blob();
         const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-        setDialogue(dialogueHeader);
-        setVoiceProfile(profileHeader ? JSON.parse(profileHeader) : null);
+        setVoiceCache((prev) => {
+          // Revoke old URL for this person if exists
+          if (prev[personId]?.url) URL.revokeObjectURL(prev[personId].url);
+          return {
+            ...prev,
+            [personId]: {
+              url,
+              dialogue: dialogueHeader,
+              profile: profileHeader ? JSON.parse(profileHeader) : null,
+            },
+          };
+        });
+        setActiveVoiceId(personId);
       } catch (err: any) {
         setError(err.message || "Voice generation failed");
       } finally {
@@ -178,14 +189,15 @@ export default function App() {
 
   const handlePersonVoice = (id: string) => {
     setSelectedPersonId(id);
-    generateVoice(id);
+    if (voiceCache[id]) {
+      setActiveVoiceId(id); // play cached — no API call
+    } else {
+      generateVoice(id);
+    }
   };
 
   const clearAudio = () => {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(null);
-    setDialogue(null);
-    setVoiceProfile(null);
+    setActiveVoiceId(null); // hide player; keep cache so voices are still replayable
   };
 
   const exitPairMode = () => {
@@ -352,13 +364,13 @@ export default function App() {
             </div>
           )}
 
-          {/* Audio player */}
-          {audioUrl && (
+          {/* Audio player — shows whichever person's voice is active */}
+          {activeVoiceId && voiceCache[activeVoiceId] && (
             <AudioPlayer
-              audioUrl={audioUrl}
-              dialogue={dialogue}
-              voiceProfile={voiceProfile}
-              personId={selectedPersonId}
+              audioUrl={voiceCache[activeVoiceId].url}
+              dialogue={voiceCache[activeVoiceId].dialogue}
+              voiceProfile={voiceCache[activeVoiceId].profile}
+              personId={activeVoiceId}
               onClose={clearAudio}
             />
           )}
@@ -542,6 +554,7 @@ export default function App() {
               isSelected={!pairMode && selectedPersonId === p.person_id}
               isGeneratingVoice={isGeneratingVoice && selectedPersonId === p.person_id}
               voiceEnabled={voiceEnabled && !pairMode}
+              hasCachedVoice={!!voiceCache[p.person_id]}
               pairRole={pairA === p.person_id ? "A" : pairB === p.person_id ? "B" : undefined}
               onClick={() => handlePersonClick(p.person_id)}
               onVoice={() => handlePersonVoice(p.person_id)}
